@@ -1,0 +1,49 @@
+configVersion: 1
+project: vb-load-test
+deploy:
+  helmRelease: vb-load-test
+  namespace: vb-load-test
+  namespaceSlug: false
+  helmReleaseSlug: false
+cleanup:
+  disableKubernetesBasedPolicy: true
+  keepPolicies:
+  - references:
+      tag: /.*/
+      limit:
+        last: 1
+  - references:
+      branch: /^(main|master)$/
+    imagesPerReference:
+      last: 1
+---
+image: vb-load-test
+final: true
+from: python:bookworm
+shell:
+  beforeInstall:
+  - apt update && apt upgrade -y && pip install --upgrade pip
+  install:
+  - cd app && python -m venv venv && ./venv/bin/pip install --no-cache-dir -r requirements.txt
+git:
+  - add: /
+    to: /app
+    includePaths:
+      - requirements.txt
+    stageDependencies:
+      install:
+        - '*'
+  - add: /
+    to: /app
+    owner: nobody
+    group: nogroup
+    includePaths:
+    - locustfile.py
+    stageDependencies:
+      setup:
+        - '*'
+docker:
+  WORKDIR: /app
+  USER: nobody
+  EXPOSE: ["8089", "5557"]
+  ENTRYPOINT: ["./venv/bin/python", "-m", "locust"]

@@ -1,0 +1,6 @@
+dependencies:
+- name: nxs-universal-chart
+  repository: https://registry.nixys.io/chartrepo/public
+  version: 2.8.1
+digest: sha256:4a8b46d25d394a551c9b0972cca6c6db122e625c8b56fe4ea4cba9f09507a794
+generated: "2024-10-05T12:13:59.205591448+01:00"

@@ -1,0 +1,141 @@
+global:
+  helmVersion: "v3"
+  kubeVersion: "1.28.0"
+  apiVersions:
+    deployment: "apps/v1"
+nxs-universal-chart:
+  generic:
+    extraImagePullSecrets:
+    - name: aws-registry
+
+  services:
+    master:
+      type: ClusterIP
+      extraSelectorLabels:
+        role: master
+      ports:
+      - name: http
+        protocol: TCP
+        port: 80
+        targetPort: 8089
+      - name: mesh
+        protocol: TCP
+        port: 5557
+        targetPort: 5557
+
+  configMaps:
+    locust-master-config:
+      data:
+        locust.conf: |
+          master-url: "https://ewr1.vultrobjects.com/moments/streams/bunny/master.m3u8"
+  ingresses:
+    master:
+      ingressClassName: "nginx"
+      annotations:
+        nginx.ingress.kubernetes.io/auth-signin: https://$host/dex-authenticator/sign_in
+        nginx.ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User,X-Auth-Request-Email
+        nginx.ingress.kubernetes.io/auth-url: https://{{ $.Values.werf.name }}-dex-authenticator.{{ $.Values.werf.name }}.svc.cluster.local/dex-authenticator/auth
+        nginx.ingress.kubernetes.io/proxy-body-size: "128m"
+      hosts:
+        - hostname: locust.aws.example.tech
+          paths:
+          - serviceName: master
+            servicePort: 80
+
+  deploymentsGeneral: {}
+
+  deployments:
+    master:
+      podLabels:
+        role: master
+      extraSelectorLabels:
+        role: master
+      securityContext:
+        runAsUser: 65534
+        runAsGroup: 65534
+      podAnnotations:
+        randomstring: "123"
+      replicas: 1
+      containers:
+      - name: locust
+        image: '{{ $.Values.werf.repo }}'
+        imageTag: '{{ index $.Values.werf.tag $.Values.werf.name }}'
+        resources:
+          limits:
+            memory: 1024Mi
+          requests:
+            cpu: 500m
+            memory: 1024Mi
+        command: [ "sh", "-c" ]
+        args: [ "./venv/bin/python -m locust --master --config locust.conf" ]
+        ports:
+          - name: web
+            containerPort: 8089
+          - name: mesh
+            containerPort: 5557
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: locust-master-config
+          mountPath: /app/locust.conf
+          subPath: locust.conf
+        env:
+          - name: LOCUST_HOST
+            value: "https://moments.stress.aws.example.tech"
+          - name: LOCUST_EXPECT_WORKERS
+            value: "50"
+          - name: LOCUST_ENABLE_REBALANCING
+            value: "true"
+          - name: LOCUST_RUN_TIME
+            value: 15m
+          - name: LOCUST_AUTOSTART
+            value: "true"
+          - name: LOCUST_USERS
+            value: "50000"
+          - name: LOCUST_SPAWN_RATE
+            value: "100"
+      volumes:
+      - type: configMap
+        name: locust-master-config
+        defaultMode: 420
+        items:
+        - key: locust.conf
+          path: locust.conf
+  hooks:
+    worker:
+      kind: "post-install,post-upgrade"
+      parallelism: 20
+      completions: 20
+      activeDeadlineSeconds: 1200 #20 minutes
+      backoffLimit: 0
+      podLabels:
+        role: worker
+      extraSelectorLabels:
+        role: worker
+      securityContext:
+        runAsUser: 65534
+        runAsGroup: 65534
+      replicas: 20
+      containers:
+      - name: locust
+        image: '{{ $.Values.werf.repo }}'
+        imageTag: '{{ index $.Values.werf.tag $.Values.werf.name }}'
+        resources:
+          requests:
+            cpu: 3
+            memory: 4096Mi
+        command: [ "sh", "-c" ]
+        args: [ "timeout --preserve-status 16m ./venv/bin/python -m locust --worker --processes 4 || exit 0" ]
+        env:
+          - name: LOCUST_MASTER_NODE_HOST
+            value: "{{ $.Values.werf.name }}-master"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+      nodeSelector:
+        dedicated: load-test
+      tolerations:
+        - effect: NoExecute
+          key: dedicated
+          value: load-test      

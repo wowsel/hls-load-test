@@ -1,0 +1,9 @@
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: urls
+#   labels:
+#     app: locust
+# data:
+#   LOCUST_MASTER_URL: |
+# {{ .Files.Get "urls.ini" | indent 4 }}

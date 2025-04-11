@@ -1,0 +1,10 @@
+# apiVersion: deckhouse.io/v1alpha1
+# kind: DexAuthenticator
+# metadata:
+#   name: vb-load-test
+#   namespace: vb-load-test
+# spec:
+#   applicationDomain: locust.aws.example.tech
+#   applicationIngressClassName: nginx
+#   keepUsersLoggedInFor: 168h
+#   sendAuthorizationHeader: false
