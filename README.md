@@ -11,6 +11,9 @@ This script is designed for load testing HLS (HTTP Live Streaming) streams using
 - **Random Playback Position**: For VOD streams, the script can select a random initial segment and switches to a new random segment at configurable intervals.
 - **Efficient Processing**: Uses `FastHttpUser` for improved performance under heavy load.
 - **Timeout Handling**: Sets a configurable timeout for HTTP requests to prevent hanging.
+- **Path Flexibility**: Supports both absolute URLs and relative paths in the `master-url` parameter.
+- **Minimal Bandwidth Usage**: By default, the script only downloads segment headers (first few bytes) to verify availability without streaming the actual content.
+- **Flexible Segment Filtering**: Can be configured to download all segments or only segments from the specified host.
 - **Multiple Configuration Options**: Allows setting `host`, `master-url`, buffer sizes, and switching intervals via command-line arguments or environment variables.
 - **Docker and Kubernetes Support**: The script can be run inside a Docker container or deployed to Kubernetes.
 
@@ -36,22 +39,67 @@ pip install -r requirements.txt
 ### Command-line Arguments
 
 - `--host`: Base URL of the HLS stream (e.g., `https://example.com`).
-- `--master-url`: URL or path to the master playlist (e.g., `/api/livestreaming?url=https://example.com/playlist.m3u8`).
+- `--master-url`: URL or path to the master playlist. Can be:
+  - Absolute URL (e.g., `https://example.com/playlist.m3u8`)
+  - Relative path (e.g., `/api/livestreaming?url=https://example.com/playlist.m3u8`)
 - `--vod-buffer-duration`: Buffer size for VOD streams in seconds (default: 40).
 - `--vod-switch-interval`: Interval between random position changes in VOD streams, in seconds (default: 300). Set to 0 to disable random switching and play VOD linearly from beginning to end.
+- `--filter-host-segments`: When set to `True` (default), only download segments with URLs starting with the host. Set to `False` to download all segments regardless of their URL.
+- `--download-full-segments`: When set to `True`, download the entire segment content. Default is `False`, which only downloads the first few bytes of each segment to verify availability.
 
 ### Running the Script
 
 You can run the script directly with Locust:
 
 ```bash
+# Using relative path
 locust --host=https://example.com --master-url=/api/livestreaming?url=https://example.com/playlist.m3u8
+```
+
+```bash
+# Using full URL
+locust --host=https://example.com --master-url=https://cdn.example.com/streams/playlist.m3u8
+```
+
+To download all segments (not just those starting with the host URL):
+
+```bash
+# Using relative path
+locust --host=https://example.com --master-url=/api/livestreaming?url=https://example.com/playlist.m3u8 --filter-host-segments=False
+```
+
+```bash
+# Using full URL
+locust --host=https://example.com --master-url=https://cdn.example.com/streams/playlist.m3u8 --filter-host-segments=False
+```
+
+To download full segment content instead of just headers:
+
+```bash
+# Using relative path
+locust --host=https://example.com --master-url=/api/livestreaming?url=https://example.com/playlist.m3u8 --download-full-segments=True
+```
+
+```bash
+# Using full URL
+locust --host=https://example.com --master-url=https://cdn.example.com/streams/playlist.m3u8 --download-full-segments=True
 ```
 
 For multiple master URLs (to test different streams), separate them with commas:
 
 ```bash
+# Using relative paths
 locust --host=https://example.com --master-url="/api/stream1,/api/stream2"
+```
+
+```bash
+# Using full URLs
+locust --host=https://example.com --master-url="https://cdn1.example.com/stream1.m3u8,https://cdn2.example.com/stream2.m3u8"
+```
+
+```bash
+# Using a mix of relative paths and full URLs
+locust --host=https://example.com --master-url="/api/stream1,https://cdn.example.com/stream2.m3u8"
 ```
 
 ### Docker Usage
@@ -131,6 +179,7 @@ The script simulates HLS clients that:
 1. Fetch the master playlist.
 2. Choose a variant playlist based on resolution preference (preferring 720p) and bandwidth.
 3. Determine if the stream is LIVE or VOD based on playlist tags.
+4. Process segments without actually downloading or playing the media content.
 
 ### For LIVE streams:
 - Continuously update the playlist and download new segments as they become available.
@@ -141,6 +190,13 @@ The script simulates HLS clients that:
 - Start playback from a random segment.
 - Switch to a new random segment periodically (if enabled).
 - Maintain a fixed buffer size, downloading segments as needed.
+
+### Resource Efficiency
+
+The script uses the following optimizations to reduce resource usage:
+- Only downloads a few bytes of each segment using Range requests to verify availability without consuming bandwidth (can be changed with `--download-full-segments=True`)
+- By default, only processes segments that match the specified host URL (can be changed with `--filter-host-segments=False`)
+- Efficiently manages buffer levels without actually streaming the content
 
 ## Key Components
 
@@ -203,7 +259,4 @@ The script is highly configurable through command-line arguments and environment
 - [HLS Specification](https://datatracker.ietf.org/doc/html/rfc8216): The RFC for HTTP Live Streaming
 - [m3u8 Library Documentation](https://github.com/globocom/m3u8): Python library for parsing M3U8 files
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
 

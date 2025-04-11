@@ -49,6 +49,16 @@ def _(parser):
                         default=300,
                         env_var="VOD_SWITCH_INTERVAL",
                         help="Interval between random position changes in VOD, in seconds. Set to 0 to disable random switching.")
+    parser.add_argument("--filter-host-segments", 
+                        action="store_true",
+                        default=True,
+                        env_var="FILTER_HOST_SEGMENTS",
+                        help="Only download segments that start with the host URL. Set to False to download all segments.")
+    parser.add_argument("--download-full-segments", 
+                        action="store_true",
+                        default=False,
+                        env_var="DOWNLOAD_FULL_SEGMENTS",
+                        help="Download full segment content instead of just the first few bytes.")
 
 class HLSUser(FastHttpUser):
     """
@@ -90,6 +100,9 @@ class HLSUser(FastHttpUser):
         self.playlist_segments = []        # List of segments for VOD
         self.total_segments = 0            # Total number of segments in VOD
         self.current_segment_index = 0     # Current segment index for VOD
+        # Initialize the filtering settings
+        self.filter_host_segments = self.environment.parsed_options.filter_host_segments
+        self.download_full_segments = self.environment.parsed_options.download_full_segments
 
         self.running = True                # Flag indicating if user is active
         self.greenlets = []                # List of running greenlets (background tasks)
@@ -422,14 +435,24 @@ class HLSUser(FastHttpUser):
                             # Convert relative path to full URL
                             ts_url_full = urljoin(self.playlist_uri, ts_uri)
 
-                            # Check URL and download TS segment
-                            if ts_url_full.startswith(self.host):
+                            # Check URL based on filter setting and download TS segment
+                            should_download = True
+                            if self.filter_host_segments and not ts_url_full.startswith(self.host):
+                                should_download = False
+                                logging.debug(f"Skipping segment with URL not matching host: {ts_url_full}")
+
+                            if should_download:
                                 logging.debug(f"Downloading TS segment: {ts_url_full}")
 
-                                # Use Range header to minimize data transfer (only request header bytes)
+                                # Prepare headers based on download mode
+                                headers = {}
+                                if not self.download_full_segments:
+                                    headers = {'Range': 'bytes=0-0'}
+                                    
+                                # Download segment
                                 ts_response = self.client.get(
                                     ts_url_full,
-                                    headers={'Range': 'bytes=0-0'},
+                                    headers=headers,
                                     name=f"GET TS Segment"
                                 )
 
@@ -443,8 +466,7 @@ class HLSUser(FastHttpUser):
                                 else:
                                     logging.error(f"Error downloading TS segment: status code {ts_response.status_code}")
                             else:
-                                logging.debug(f"TS segment has unsuitable URL: {ts_url_full}")
-                                # Still update buffer and sequence
+                                # Still update buffer and sequence even if we didn't download
                                 self.buffered_duration += duration
                                 self.last_downloaded_sequence = segment_sequence
                         else:
